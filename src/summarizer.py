@@ -2,13 +2,13 @@
 Summarization module for Deep Researcher Agent.
 
 This module provides functionality to summarize multiple documents and reasoning steps
-into coherent research reports using transformer-based models.
+into coherent research reports using small LLMs from Hugging Face.
 """
 
 from typing import List, Dict, Any, Optional, Union
 import logging
 from dataclasses import dataclass
-from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
 import torch
 import re
 
@@ -32,61 +32,71 @@ class SummaryConfig:
 
 class DocumentSummarizer:
     """
-    A class to handle document summarization using transformer models.
+    A class to handle document summarization using small LLMs from Hugging Face.
     """
     
     def __init__(self, 
-                 model_name: str = "facebook/bart-large-cnn",
+                 model_name: str = "microsoft/DialoGPT-small",
                  device: Optional[str] = None):
         """
         Initialize the document summarizer.
         
         Args:
-            model_name (str): Name of the summarization model to use
+            model_name (str): Name of the LLM model to use for summarization
             device (Optional[str]): Device to run the model on ('cpu', 'cuda', etc.)
         """
         self.model_name = model_name
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.summarizer = None
+        self.generator = None
         self.tokenizer = None
         self.model = None
         
         self._load_model()
     
     def _load_model(self) -> None:
-        """Load the summarization model and tokenizer."""
+        """Load the LLM model and tokenizer."""
         try:
-            logger.info(f"Loading summarization model: {self.model_name}")
+            logger.info(f"Loading LLM model: {self.model_name}")
             logger.info(f"Using device: {self.device}")
             
-            # Load the summarization pipeline
-            self.summarizer = pipeline(
-                "summarization",
+            # Load the text generation pipeline
+            self.generator = pipeline(
+                "text-generation",
                 model=self.model_name,
                 device=0 if self.device == "cuda" else -1,
-                return_full_text=False
+                max_length=512,
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.9,
+                repetition_penalty=1.1
             )
             
             # Also load tokenizer and model separately for more control
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-            self.model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
+            self.model = AutoModelForCausalLM.from_pretrained(self.model_name)
             
             if self.device == "cuda":
                 self.model = self.model.cuda()
             
-            logger.info("Summarization model loaded successfully")
+            # Add padding token if not present
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+            
+            logger.info("LLM model loaded successfully")
             
         except Exception as e:
-            logger.error(f"Error loading summarization model: {e}")
+            logger.error(f"Error loading LLM model: {e}")
             # Fallback to a smaller model
             try:
-                logger.info("Trying fallback model: distilbart-cnn-12-6")
-                self.model_name = "sshleifer/distilbart-cnn-12-6"
-                self.summarizer = pipeline(
-                    "summarization",
+                logger.info("Trying fallback model: gpt2")
+                self.model_name = "gpt2"
+                self.generator = pipeline(
+                    "text-generation",
                     model=self.model_name,
                     device=0 if self.device == "cuda" else -1,
-                    return_full_text=False
+                    max_length=512,
+                    do_sample=True,
+                    temperature=0.7
                 )
                 logger.info("Fallback model loaded successfully")
             except Exception as fallback_error:
@@ -140,22 +150,37 @@ class DocumentSummarizer:
         return "\n\n".join(cleaned_docs)
     
     def _summarize_short_text(self, text: str, config: SummaryConfig) -> str:
-        """Summarize short text using the pipeline."""
+        """Summarize short text using the LLM."""
         try:
-            result = self.summarizer(
-                text,
-                max_length=config.max_length,
-                min_length=config.min_length,
-                do_sample=config.do_sample,
-                temperature=config.temperature,
-                top_p=config.top_p,
-                repetition_penalty=config.repetition_penalty
+            # Create a better prompt for summarization
+            prompt = f"Text: {text}\n\nSummary:"
+            
+            # Generate summary using LLM with better parameters
+            result = self.generator(
+                prompt,
+                max_length=len(prompt.split()) + config.max_length,
+                do_sample=True,
+                temperature=0.3,  # Lower temperature for more focused output
+                top_p=0.8,
+                repetition_penalty=1.2,
+                pad_token_id=self.tokenizer.eos_token_id,
+                truncation=True
             )
             
             if isinstance(result, list) and len(result) > 0:
-                return result[0]['summary_text']
+                generated_text = result[0]['generated_text']
+                # Extract only the summary part (after "Summary:")
+                if "Summary:" in generated_text:
+                    summary = generated_text.split("Summary:")[-1].strip()
+                    # Clean up the summary
+                    summary = summary.split('\n')[0].strip()  # Take only first line
+                    if len(summary) > config.max_length * 6:  # Rough word count check
+                        summary = summary[:config.max_length * 6] + "..."
+                    return summary if summary else self._extractive_summary(text)
+                else:
+                    return self._extractive_summary(text)
             else:
-                return "Unable to generate summary."
+                return self._extractive_summary(text)
                 
         except Exception as e:
             logger.error(f"Error in short text summarization: {e}")
@@ -333,8 +358,31 @@ class DocumentSummarizer:
         summary_prompt = f"Research Query: {query}\n\nKey Findings: {conclusions_text}\n\nProvide a concise executive summary:"
         
         try:
-            summary = self.summarize_documents([summary_prompt], config)
-            return summary
+            # Use LLM to generate executive summary with better prompt
+            prompt = f"Research: {query}\nFindings: {conclusions_text}\n\nExecutive Summary:"
+            
+            result = self.generator(
+                prompt,
+                max_length=len(prompt.split()) + 80,
+                do_sample=True,
+                temperature=0.4,
+                top_p=0.8,
+                repetition_penalty=1.1,
+                pad_token_id=self.tokenizer.eos_token_id,
+                truncation=True
+            )
+            
+            if isinstance(result, list) and len(result) > 0:
+                generated_text = result[0]['generated_text']
+                if "Executive Summary:" in generated_text:
+                    summary = generated_text.split("Executive Summary:")[-1].strip()
+                    # Clean up the summary
+                    summary = summary.split('\n')[0].strip()
+                    return summary if summary else f"This research addressed the query: '{query}'. The analysis involved {len(reasoning_steps)} reasoning steps and provided insights into the topic."
+                else:
+                    return f"This research addressed the query: '{query}'. The analysis involved {len(reasoning_steps)} reasoning steps and provided insights into the topic."
+            else:
+                return f"This research addressed the query: '{query}'. The analysis involved {len(reasoning_steps)} reasoning steps and provided insights into the topic."
         except Exception:
             return f"This research addressed the query: '{query}'. The analysis involved {len(reasoning_steps)} reasoning steps and provided insights into the topic."
     
@@ -406,14 +454,14 @@ class DocumentSummarizer:
 
 
 def summarize_documents(documents: List[str], 
-                       model_name: str = "facebook/bart-large-cnn",
+                       model_name: str = "microsoft/DialoGPT-small",
                        config: Optional[SummaryConfig] = None) -> str:
     """
     Convenience function to summarize documents.
     
     Args:
         documents (List[str]): List of documents to summarize
-        model_name (str): Name of the summarization model to use
+        model_name (str): Name of the LLM model to use
         config (Optional[SummaryConfig]): Configuration for summarization
     
     Returns:
@@ -424,8 +472,8 @@ def summarize_documents(documents: List[str],
 
 
 if __name__ == "__main__":
-    # Test the summarizer
-    summarizer = DocumentSummarizer()
+    # Test the summarizer with a small LLM
+    summarizer = DocumentSummarizer("gpt2")  # Use GPT-2 as it's smaller and faster
     
     # Test documents
     test_documents = [

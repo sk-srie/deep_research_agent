@@ -61,7 +61,7 @@ class DeepResearcherAgent:
                  collection_name: str = "research_documents",
                  persist_directory: str = "./chroma_db",
                  embedding_model: str = "all-MiniLM-L6-v2",
-                 summarization_model: str = "facebook/bart-large-cnn"):
+                 summarization_model: str = "gpt2"):
         """
         Initialize the Deep Researcher Agent.
         
@@ -183,7 +183,7 @@ class DeepResearcherAgent:
             # Extract conclusions from high-confidence steps
             high_confidence_steps = [
                 step for step in reasoning_steps 
-                if step.confidence > 0.5
+                if step.confidence > 0.3  # Lower threshold to include more steps
             ]
             
             if not high_confidence_steps:

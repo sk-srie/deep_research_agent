@@ -75,14 +75,21 @@ def display_query_result(result: QueryResult) -> None:
 def interactive_mode(agent: DeepResearcherAgent) -> None:
     """Run the agent in interactive mode."""
     console.print(Panel(
-        "[bold blue]Deep Researcher Agent - Interactive Mode[/bold blue]\n\n"
+        "[bold blue]Deep Researcher Agent - ML Knowledge Base Mode[/bold blue]\n\n"
+        "Ask questions about machine learning topics:\n"
+        "• What is machine learning?\n"
+        "• Explain supervised vs unsupervised learning\n"
+        "• What is overfitting?\n"
+        "• Describe the bias-variance tradeoff\n"
+        "• What are ensemble methods?\n"
+        "• How does cross-validation work?\n\n"
         "Commands:\n"
-        "• Type your research query to get started\n"
+        "• Type your ML research query to get started\n"
         "• Type 'history' to see query history\n"
         "• Type 'export <format>' to export last result (markdown/pdf)\n"
         "• Type 'info' to see system information\n"
         "• Type 'quit' to exit",
-        title="Welcome",
+        title="ML Knowledge Base Ready",
         border_style="blue"
     ))
     
@@ -206,12 +213,29 @@ def main():
         help="Maximum number of reasoning steps (default: 5)"
     )
     
+    parser.add_argument(
+        "--collection",
+        type=str,
+        default="ml_knowledge_base",
+        help="Chroma collection name (default: ml_knowledge_base)"
+    )
+    
+    parser.add_argument(
+        "--persist-dir",
+        type=str,
+        default="./chroma_db_ml",
+        help="Chroma database directory (default: ./chroma_db_ml)"
+    )
+    
     args = parser.parse_args()
     
     try:
-        # Initialize agent
-        console.print("[bold blue]Initializing Deep Researcher Agent...[/bold blue]")
-        agent = DeepResearcherAgent()
+        # Initialize agent with ML knowledge base
+        console.print("[bold blue]Initializing Deep Researcher Agent with ML Knowledge Base...[/bold blue]")
+        agent = DeepResearcherAgent(
+            collection_name=args.collection,
+            persist_directory=args.persist_dir
+        )
         
         # Load documents if specified
         if args.load:

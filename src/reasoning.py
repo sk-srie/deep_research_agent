@@ -311,16 +311,25 @@ class MultiStepReasoner:
         """Generate sub-queries for factual queries."""
         sub_queries = []
         
-        # Extract key concepts
-        concepts = self._extract_key_concepts(query)
-        
-        for i, concept in enumerate(concepts):
+        # For simple queries, use the original query directly
+        if len(query.split()) <= 4:  # Short queries like "What is machine learning?"
             sub_queries.append(SubQuery(
-                text=f"What is {concept}?",
+                text=query,
                 query_type=QueryType.FACTUAL,
-                priority=i + 1,
+                priority=1,
                 context=query
             ))
+        else:
+            # For longer queries, extract key concepts
+            concepts = self._extract_key_concepts(query)
+            
+            for i, concept in enumerate(concepts):
+                sub_queries.append(SubQuery(
+                    text=f"What is {concept}?",
+                    query_type=QueryType.FACTUAL,
+                    priority=i + 1,
+                    context=query
+                ))
         
         return sub_queries
     
@@ -462,8 +471,8 @@ class MultiStepReasoner:
         doc_texts = [doc["document"] for doc in retrieved_docs]
         similarities = [doc["similarity"] for doc in retrieved_docs]
         
-        # Calculate average confidence
-        confidence = sum(similarities) / len(similarities) if similarities else 0.0
+        # Calculate average confidence (ensure non-negative)
+        confidence = max(0.0, sum(similarities) / len(similarities)) if similarities else 0.0
         
         # Generate reasoning based on query type
         if sub_query.query_type == QueryType.FACTUAL:

@@ -163,7 +163,7 @@ class ChromaVectorStore:
                         "document": results["documents"][0][i],
                         "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
                         "distance": results["distances"][0][i] if results["distances"] else 0.0,
-                        "similarity": 1 - results["distances"][0][i] if results["distances"] else 1.0
+                        "similarity": max(0.0, 1 - results["distances"][0][i]) if results["distances"] else 1.0
                     })
             
             logger.info(f"Retrieved {len(formatted_results)} documents for query")
