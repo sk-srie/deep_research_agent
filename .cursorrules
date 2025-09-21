@@ -1,0 +1,38 @@
+# .cursorrules
+# Project-wide AI coding rules for Deep Researcher Agent
+
+style:
+  - Use Python 3.10+
+  - Code must be modular and production-ready
+  - Follow PEP8 and include docstrings for all methods
+  - Use type hints everywhere
+
+project_structure:
+  - src/
+    - __init__.py
+    - embeddings.py        # local embedding generation
+    - vectorstore.py       # FAISS/Chroma storage & retrieval
+    - reasoning.py         # multi-step reasoning logic
+    - summarizer.py        # combines multi-doc results into report
+    - query_handler.py     # main interface for user queries
+  - data/
+    - sample.txt           # sample docs for testing
+  - main.py                # entry point
+  - requirements.txt       # dependencies
+  - README.md              # documentation
+
+dependencies:
+  - sentence-transformers   # for embeddings
+  - faiss-cpu              # vector store
+  - langchain              # for retrieval + reasoning chains
+  - pypdf2                 # PDF loading
+  - rich                   # for CLI formatting
+  - reportlab              # for exporting to PDF
+
+rules:
+  - Do not use any external web search API (Google, Bing, SerpAPI, etc.)
+  - All embeddings must be generated locally (SentenceTransformers)
+  - Retrieval must be handled via FAISS or Chroma
+  - Responses should explain reasoning steps when asked
+  - Include a CLI interface for user interaction
+  - Add option to export answers in PDF or Markdown
